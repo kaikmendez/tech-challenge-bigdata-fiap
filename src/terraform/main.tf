@@ -4,7 +4,7 @@ provider "aws" {
 }
 
 variable "project_name" {
-  default = "tech-challenge-fiap-bovespa"
+  default = "tech-challenge-fiap-bovespa-datalake"
 }
 
 # 2. S3 - Data Lake (Requisitos 2 e 6)
