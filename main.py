@@ -23,7 +23,7 @@ def deploy_infrastructure():
     print("🚀 Iniciando criação da infraestrutura via Terraform...")
     
     # Define o caminho para a pasta do terraform (ajuste se necessário)
-    tf_path = os.path.join(os.getcwd(), "terraform")
+    tf_path = os.path.join(os.getcwd(), "src/terraform")
     
     try:
         # 1. Terraform Init

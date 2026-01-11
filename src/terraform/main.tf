@@ -4,7 +4,7 @@ provider "aws" {
 }
 
 variable "project_name" {
-  default = "tech-challenge-fiap-bovespa-datalake"
+  default = "tech-challenge-fiap-bovespa"
 }
 
 # 2. S3 - Data Lake (Requisitos 2 e 6)
@@ -54,9 +54,21 @@ resource "aws_glue_job" "bovespa_etl" {
   }
 }
 
-# 6. AWS Lambda - O Gatilho (Requisito 15 e 16)
+# 6. Automação do ZIP da Lambda
+# Este bloco gera o arquivo ZIP automaticamente a partir do seu script Python
+data "archive_file" "lambda_zip" {
+  type        = "zip"
+  # Note que agora o caminho aponta para /src/lambda/
+  source_file = "${path.module}/../src/lambda/trigger_glue.py"
+  output_path = "${path.module}/lambda_function_payload.zip"
+}
+
+# 7. AWS Lambda - O Gatilho (Requisito 15 e 16)
 resource "aws_lambda_function" "s3_trigger_glue" {
-  filename      = "lambda_function_payload.zip" # Você deve zipar seu script da lambda
+  # Usa o arquivo gerado automaticamente pelo bloco archive_file acima
+  filename         = data.archive_file.lambda_zip.output_path
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  
   function_name = "trigger-glue-job-lambda"
   role          = aws_iam_role.lambda_role.arn
   handler       = "trigger_glue.lambda_handler"
@@ -69,7 +81,17 @@ resource "aws_lambda_function" "s3_trigger_glue" {
   }
 }
 
-# 7. Configuração do Gatilho S3 -> Lambda (Requisito 15)
+# 8. Permissão para o S3 invocar a Lambda (NOVO)
+# Sem isso, o S3 tenta avisar a Lambda, mas a AWS bloqueia o acesso
+resource "aws_lambda_permission" "allow_bucket" {
+  statement_id  = "AllowExecutionFromS3Bucket"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.s3_trigger_glue.function_name
+  principal     = "s3.amazonaws.com"
+  source_arn    = aws_s3_bucket.datalake.arn
+}
+
+# 9. Configuração do Gatilho S3 -> Lambda (Requisito 15)
 resource "aws_s3_bucket_notification" "bucket_notification" {
   bucket = aws_s3_bucket.datalake.id
 
@@ -79,4 +101,49 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
     filter_prefix       = "raw/"
     filter_suffix       = ".parquet"
   }
+  
+  # Garante que a permissão de invocação seja criada antes do gatilho
+  depends_on = [aws_lambda_permission.allow_bucket]
+}
+
+# 10. Criação da Identidade da Lambda (Role)
+resource "aws_iam_role" "lambda_role" {
+  name = "LambdaTriggerGlueRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
+}
+
+# 11. Permissão para a Lambda iniciar o Job do Glue
+resource "aws_iam_role_policy" "lambda_glue_policy" {
+  name = "LambdaStartGluePolicy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = "glue:StartJobRun"
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action   = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Effect   = "Allow"
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
 }
