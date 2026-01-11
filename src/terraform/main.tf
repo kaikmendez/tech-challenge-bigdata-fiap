@@ -7,12 +7,13 @@ variable "project_name" {
   default = "tech-challenge-fiap-bovespa"
 }
 
-# 2. S3 - Data Lake (Requisitos 2 e 6)
+# 2. S3 - Data Lake (Requisito 2 e 6)
 resource "aws_s3_bucket" "datalake" {
   bucket = "${var.project_name}-datalake"
+  force_destroy = true # Permite deletar o bucket mesmo com arquivos dentro
 }
 
-# Criação das pastas Raw e Refined (Requisito 14 e 21)
+# Pastas Raw e Refined
 resource "aws_s3_object" "raw_folder" {
   bucket = aws_s3_bucket.datalake.id
   key    = "raw/"
@@ -23,12 +24,20 @@ resource "aws_s3_object" "refined_folder" {
   key    = "refined/"
 }
 
+# --- Upload automático do script do Glue ---
+resource "aws_s3_object" "glue_script" {
+  bucket = aws_s3_bucket.datalake.id
+  key    = "scripts/etl_job.py"
+  source = "${path.module}/../scripts/etl_job.py"
+  etag   = filemd5("${path.module}/../scripts/etl_job.py") # Detecta mudanças no código
+}
+
 # 3. Glue Catalog (Requisito 23)
 resource "aws_glue_catalog_database" "b3_db" {
   name = "db_bovespa_refined"
 }
 
-# 4. IAM Role para o Glue (Permissões de leitura/escrita)
+# 4. IAM Role para o Glue
 resource "aws_iam_role" "glue_service_role" {
   name = "GlueBovespaServiceRole"
   assume_role_policy = jsonencode({
@@ -37,11 +46,46 @@ resource "aws_iam_role" "glue_service_role" {
   })
 }
 
-# 5. AWS Glue Job - Modo Visual (Requisito 15, 17-21)
+# 5. Política de acesso S3 e Glue (ListBucket + GetObject + Catalog)
+resource "aws_iam_role_policy" "glue_s3_policy" {
+  name = "GlueS3AccessPolicy"
+  role = aws_iam_role.glue_service_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [aws_s3_bucket.datalake.arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+        Resource = ["${aws_s3_bucket.datalake.arn}/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = [
+          "glue:*",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = ["*"]
+      }
+    ]
+  })
+}
+
+# 6. AWS Glue Job (Requisito 5, 17-21)
 resource "aws_glue_job" "bovespa_etl" {
   name     = "job-bovespa-etl-visual"
   role_arn = aws_iam_role.glue_service_role.arn
   glue_version = "4.0"
+  worker_type  = "G.1X"
+  number_of_workers = 2 # Econômico para o Tech Challenge
+  timeout      = 10   # Evita gastos se o loop travar
 
   command {
     name            = "glueetl"
@@ -49,23 +93,24 @@ resource "aws_glue_job" "bovespa_etl" {
   }
 
   default_arguments = {
-    "--job-language" = "python"
-    "--DATABASE_NAME" = aws_glue_catalog_database.b3_db.name
+    "--job-language"        = "python"
+    "--DATABASE_NAME"       = aws_glue_catalog_database.b3_db.name
+    "--enable-metrics"      = "true"
+    "--enable-continuous-cloudwatch-log" = "true"
   }
+
+  depends_on = [aws_s3_object.glue_script]
 }
 
-# 6. Automação do ZIP da Lambda
-# Este bloco gera o arquivo ZIP automaticamente a partir do seu script Python
+# 7. Automação do ZIP da Lambda
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  # Caminho corrigido: o módulo está em src/terraform, o arquivo da lambda fica em src/lambda
   source_file = "${path.module}/../lambda/trigger_glue.py"
   output_path = "${path.module}/lambda_function_payload.zip"
 }
 
-# 7. AWS Lambda - O Gatilho (Requisito 15 e 16)
+# 8. AWS Lambda (Requisito 15 e 16)
 resource "aws_lambda_function" "s3_trigger_glue" {
-  # Usa o arquivo gerado automaticamente pelo bloco archive_file acima
   filename         = data.archive_file.lambda_zip.output_path
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   
@@ -76,13 +121,12 @@ resource "aws_lambda_function" "s3_trigger_glue" {
 
   environment {
     variables = {
-      GLUE_JOB_NAME = aws_glue_job.bovespa_etl.name
+      GLUE_JOB_NAME = "job-bovespa-etl-visual"
     }
   }
 }
 
-# 8. Permissão para o S3 invocar a Lambda (NOVO)
-# Sem isso, o S3 tenta avisar a Lambda, mas a AWS bloqueia o acesso
+# 9. Permissão para S3 invocar Lambda
 resource "aws_lambda_permission" "allow_bucket" {
   statement_id  = "AllowExecutionFromS3Bucket"
   action        = "lambda:InvokeFunction"
@@ -91,7 +135,7 @@ resource "aws_lambda_permission" "allow_bucket" {
   source_arn    = aws_s3_bucket.datalake.arn
 }
 
-# 9. Configuração do Gatilho S3 -> Lambda (Requisito 15)
+# 10. Gatilho S3 -> Lambda
 resource "aws_s3_bucket_notification" "bucket_notification" {
   bucket = aws_s3_bucket.datalake.id
 
@@ -102,48 +146,26 @@ resource "aws_s3_bucket_notification" "bucket_notification" {
     filter_suffix       = ".parquet"
   }
   
-  # Garante que a permissão de invocação seja criada antes do gatilho
   depends_on = [aws_lambda_permission.allow_bucket]
 }
 
-# 10. Criação da Identidade da Lambda (Role)
+# 11. Role e Política da Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "LambdaTriggerGlueRole"
-
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
+    Statement = [{ Action = "sts:AssumeRole", Effect = "Allow", Principal = { Service = "lambda.amazonaws.com" } }]
   })
 }
 
-# 11. Permissão para a Lambda iniciar o Job do Glue
 resource "aws_iam_role_policy" "lambda_glue_policy" {
   name = "LambdaStartGluePolicy"
   role = aws_iam_role.lambda_role.id
-
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      {
-        Action   = "glue:StartJobRun"
-        Effect   = "Allow"
-        Resource = "*"
-      },
-      {
-        Action   = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Effect   = "Allow"
-        Resource = "arn:aws:logs:*:*:*"
-      }
+      { Action = "glue:StartJobRun", Effect = "Allow", Resource = "*" },
+      { Action = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"], Effect = "Allow", Resource = "*" }
     ]
   })
 }
