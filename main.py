@@ -3,6 +3,7 @@ import boto3
 import sys
 import os
 from src.scripts.scraper import B3Ingestion
+import base64
 
 # Nome do bucket definido no seu main.tf
 BUCKET_NAME = "tech-challenge-fiap-bovespa-datalake"

@@ -58,8 +58,8 @@ resource "aws_glue_job" "bovespa_etl" {
 # Este bloco gera o arquivo ZIP automaticamente a partir do seu script Python
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  # Note que agora o caminho aponta para /src/lambda/
-  source_file = "${path.module}/../src/lambda/trigger_glue.py"
+  # Caminho corrigido: o módulo está em src/terraform, o arquivo da lambda fica em src/lambda
+  source_file = "${path.module}/../lambda/trigger_glue.py"
   output_path = "${path.module}/lambda_function_payload.zip"
 }
 
