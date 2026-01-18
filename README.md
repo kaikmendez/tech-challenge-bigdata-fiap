@@ -1,8 +1,8 @@
-# Nome do Projeto
+# Tech Challenge - Fase 2: Pipeline Batch Bovespa
 
-> Uma descrição curta e clara de uma frase sobre o que este projeto faz.
+> Descrição do Projeto.
 
-Este projeto tem como objetivo [descrever o problema que ele resolve ou a funcionalidade principal]. Ele foi desenvolvido utilizando [mencionar as principais tecnologias, ex: Python, AWS, Terraform].
+Este projeto consiste na construção de um pipeline de dados robusto e totalmente automatizado para extrair, processar e analisar dados do pregão da B3. O objetivo principal é implementar uma arquitetura de Big Data Serverless na AWS, garantindo que os dados brutos capturados via web scraping sejam transformados em informações valiosas e particionadas de forma eficiente para análise via SQL.
 
 
 
