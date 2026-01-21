@@ -65,6 +65,9 @@ cd src/terraform
 terraform init
 terraform apply -auto-approve
 
+## 🏛️ Arquitetura
+
+```mermaid
 graph LR;
     subgraph "Fonte Externa"
         A["Site B3 (Dados do Pregão)"]
