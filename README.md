@@ -12,6 +12,10 @@ Este projeto consiste na implementação de uma arquitetura de Big Data Serverle
 
 ---
 
+## 🚀 Link da Apresentação
+
+* **Vídeo de Apresentação:** [Assista ao vídeo da apresentação aqui](https://drive.google.com/file/d/1ksJaknMRYGf8PKfWKVIIOmpSvqIH9-1y/view?usp=sharing)
+
 ## 🏛️ Arquitetura e Pipeline
 
 O projeto segue a arquitetura **Medallion (Raw e Refined)**, garantindo a linhagem e a qualidade do dado em cada etapa:
