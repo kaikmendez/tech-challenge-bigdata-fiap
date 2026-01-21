@@ -67,29 +67,36 @@ terraform apply -auto-approve
 
 ## 🏛️ Arquitetura
 
-Aqui está o diagrama arquitetural do projeto, mostrando o fluxo de dados:
-
 ```mermaid
-graph LR;
-    subgraph "Usuário"
-        A["Cliente (Navegador / Cientista de Dados)"]
-    end
-
-    subgraph "Plataforma de Nuvem (Ex: Render, Heroku)"
-        B["API RESTful (FastAPI)"]
-        D{"Web Scraper (Python)<br/>Processo de Startup"}
-        C[("Banco de Dados (SQLite)")]
-    end
-
+graph LR
     subgraph "Fonte Externa"
-        E["Site books.toscrape.com"]
+        A["Site B3 (Dados do Pregão)"]
     end
 
-    %% Fluxos
-    A -- "1. Requisição HTTP/S" --> B;
-    B -- "2. Retorna JSON" --> A;
-    
-    B -- "3. Consulta Livros" --> C;
-    
-    E -- "A. Extração HTML" --> D;
-    D -- "B. Salva os Dados no Banco" --> C;
+    subgraph "Ingestão e Orquestração"
+        B["Script Scraper (Python)"]
+        C[("Amazon S3 (Raw Bucket)")]
+        D["AWS Lambda (Trigger)"]
+    end
+
+    subgraph "Processamento (ETL)"
+        E["AWS Glue Job (Visual Spark ETL)"]
+        F[("Amazon S3 (Refined Bucket)")]
+    end
+
+    subgraph "Catálogo e Consumo"
+        G["AWS Glue Data Catalog"]
+        H["Amazon Athena (SQL Query)"]
+        I["Cliente Final (Analistas / BI)"]
+    end
+
+    %% Fluxos de Dados
+    A -- "1. Scraping de Dados" --> B
+    B -- "2. Ingestão Parquet (Partição Diária)" --> C
+    C -- "3. Evento de Upload" --> D
+    D -- "4. Inicia Job do Glue" --> E
+    E -- "5. Transformações (Soma, Rename, Datas)" --> F
+    E -- "6. Registro de Metadados" --> G
+    F -- "7. Leitura de Dados Refinados" --> H
+    G -- "8. Esquema da Tabela" --> H
+    H -- "9. Dashboards e Análises" --> I
