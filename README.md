@@ -65,9 +65,14 @@ cd src/terraform
 terraform init
 terraform apply -auto-approve
 
+```
+
 ## 🏛️ Arquitetura
 
-graph LR
+Aqui está o diagrama arquitetural do projeto, mostrando o fluxo de dados:
+
+```mermaid
+graph LR;
     subgraph "Fonte Externa"
         A["Site B3 (Dados do Pregão)"]
     end
